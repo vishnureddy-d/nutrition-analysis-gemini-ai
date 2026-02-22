@@ -31,6 +31,7 @@ def create_nutrition_prompt():
     4. General summary of the health benefits or dietary considerations.
     
     If the requested input is not a food item or doesn't make sense, kindly explain that you can only provide nutritional data for foods.
+    dont stop the response in the midel i need complete and details about it 
     """
     return PromptTemplate(input_variables=["food_items"], template=template)
 
