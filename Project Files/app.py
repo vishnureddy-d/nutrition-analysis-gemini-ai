@@ -9,34 +9,84 @@ import time
 def init_genai(api_key):
     """Initializes the Google Generative AI client."""
     genai.configure(api_key=api_key)
-    # Using the standard environment variable for Langchain integration
-    os.environ["GOOGLE_API_KEY"] = api_key
-    
-    # Optionally list models to verify connectivity
+
+    if not api_key:
+        st.sidebar.warning("Please enter your Google API Key.")
+        return False
+
+    # Optionally verify connectivity
     try:
-        models = [m.name for m in genai.list_models() if "generateContent" in m.supported_generation_methods]
-        st.sidebar.success(f"Connected! Available models: {len(models)}")
+        genai.configure(api_key=api_key)
+
+        # Set API Key for Langchain Google Generative AI
+        os.environ["GOOGLE_API_KEY"] = api_key
+
+        st.sidebar.success("Gemini API Key configured successfully.")
+        return True
+
     except Exception as e:
         st.sidebar.warning(f"Connection issue: {e}")
+        return False
 
 def create_nutrition_prompt():
-    """Defines the prompt template for nutritional information."""
     template = """
-    You are an expert nutritionist and dietitian. Provide detailed nutritional information for the following food items: {food_items}.
-    
-    Please provide the information in a structured format:
-    1. Macronutrients: Protein, Fat, Carbohydrates (in grams) for each item.
-    2. Micronutrients: Key Vitamins and Minerals for each item.
-    3. Calorie Content: Total calories for each item and roughly estimated total calories.
-    4. General summary of the health benefits or dietary considerations.
-    
-    If the requested input is not a food item or doesn't make sense, kindly explain that you can only provide nutritional data for foods.
-    dont stop the response in the midel i need complete and details about it 
+    You are an expert nutritionist and professional dietitian.
+
+    Analyze the following food items and provide detailed nutritional information.
+
+    Food Items: {food_items}
+
+    Provide the response in the following structured format:
+
+    1. MACRONUTRIENTS
+       - Protein (grams)
+       - Carbohydrates (grams)
+       - Fat (grams)
+       - Dietary Fiber (grams)
+
+    2. MICRONUTRIENTS
+       - Important vitamins
+       - Important minerals
+       - Their health benefits
+
+    3. CALORIE INFORMATION
+       - Calories for each food item
+       - Total estimated calories
+       - Explain the calorie contribution of each item.
+
+    4. HEALTH BENEFITS
+       - Benefits of each food item
+       - Benefits for the human body
+       - Important dietary considerations.
+
+    5. NUTRITIONAL SUMMARY
+       - Overall nutritional quality
+       - Whether the meal is balanced
+       - Suggestions for improving the meal.
+
+    IMPORTANT INSTRUCTIONS:
+
+    - Provide detailed and complete information.
+    - Do not unnecessarily shorten the response.
+    - Use tables wherever appropriate.
+    - Explain nutritional values clearly.
+    - Mention that nutritional values are estimates.
+    - State assumptions about serving sizes.
+    - Never invent exact nutritional values.
+    - If the input is not a food item, explain that you
+      only provide nutritional information about food.
+
+    Provide a complete response with all sections.
     """
-    return PromptTemplate(input_variables=["food_items"], template=template)
+
+    return PromptTemplate(
+        input_variables=["food_items"],
+        template=template
+    )
 
 def get_nutritional_info(food_items, api_key):
     """Generates the nutritional information response using the AI model."""
+
     if not api_key:
         st.error("Please enter a valid Google API Key.")
         return None
@@ -48,19 +98,22 @@ def get_nutritional_info(food_items, api_key):
     try:
         # Initialize Langchain Chat model
         llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
-            temperature=0.4,
-            max_output_tokens=1024
+            model="gemini-3.8-flash",
+            google_api_key=api_key,
+            temperature=0.4
         )
         
+        # Create prompt
         prompt = create_nutrition_prompt()
+
+        # Create Langchain chain 
         chain = prompt | llm | StrOutputParser()
-        
-        # Adding a spinner while generating
-        with st.spinner('Analyzing nutritional content...'):
-            response = chain.invoke({"food_items": food_items})
+        response = chain.stream({
+            "food_items": food_items
+        })
             
         return response
+
     except Exception as e:
         st.error(f"Error generating response: {e}")
         return None
@@ -96,13 +149,28 @@ def main():
     if submit_button:
         if not api_key:
              st.warning("⚠️ Please provide your Google API Key in the sidebar to continue.")
+
         elif not food_input:
              st.warning("⚠️ Please enter some food items.")
+
         else:
+            st.markdown("### 🥗 Nutritional Analysis")
+
+        try:
             result = get_nutritional_info(food_input, api_key)
+
             if result:
-                st.markdown("### Nutritional Analysis")
-                st.markdown(result)
+                with st.spinner("Analyzing nutritional content... Please Wait."):
+
+                    st.write_stream(result)
+
+        except Exception as e:
+
+            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                st.error("Gemini API quota exceeded. Please try again when your quota is available.")
+
+            else:
+                st.error(f"Error generating response: {e}")
 
 if __name__ == "__main__":
     main()
